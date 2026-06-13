@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Doodles">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Doodle Infinity</title>
+<style>
+  :root{
+    --paper:#FAF7F1;
+    --ink:#2B2926;
+    --tray:#FFFFFF;
+    --shadow:0 6px 24px rgba(43,41,38,.14), 0 1px 3px rgba(43,41,38,.10);
+    --radius:22px;
+    --accent:#FF7A59;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;overscroll-behavior:none;background:var(--paper);
+    font-family:ui-rounded,-apple-system,"SF Pro Rounded","Segoe UI",system-ui,sans-serif}
+  #c{position:fixed;inset:0;touch-action:none;cursor:crosshair}
+
+  /* ---------- top bar ---------- */
+  .bar{position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);left:50%;transform:translateX(-50%);
+    display:flex;gap:6px;background:var(--tray);border-radius:var(--radius);padding:7px;box-shadow:var(--shadow);z-index:10}
+  .bar button{width:48px;height:48px;border:none;background:transparent;border-radius:16px;
+    display:flex;align-items:center;justify-content:center;color:var(--ink);transition:transform .12s ease, background .15s}
+  .bar button:active{transform:scale(.86);background:#F1EDE6}
+  .bar button[disabled]{opacity:.25}
+  .bar button.warn{color:#D0432B}
+  .bar svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+  #zoomLbl{position:fixed;top:calc(env(safe-area-inset-top,0px) + 76px);left:50%;transform:translateX(-50%);
+    font-size:12px;font-weight:700;color:#A39B8D;letter-spacing:.04em;z-index:10;opacity:0;transition:opacity .3s;pointer-events:none}
+
+  /* ---------- bottom tray ---------- */
+  .tray{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);left:50%;transform:translateX(-50%);
+    max-width:min(96vw,760px);display:flex;align-items:center;gap:10px;background:var(--tray);
+    border-radius:28px;padding:10px 14px;box-shadow:var(--shadow);z-index:10}
+  .colors{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:4px 2px}
+  .colors::-webkit-scrollbar{display:none}
+  .dot{flex:0 0 auto;width:42px;height:42px;border-radius:50%;border:3px solid transparent;
+    transition:transform .15s cubic-bezier(.34,1.56,.64,1), border-color .15s;position:relative}
+  .dot:active{transform:scale(.82)}
+  .dot.sel{transform:scale(1.18);border-color:var(--ink)}
+  .dot[data-c="#FFFFFF"]{box-shadow:inset 0 0 0 2px #E5E0D6}
+  .divider{width:2px;height:38px;background:#EFEAE1;border-radius:2px;flex:0 0 auto}
+  .sizes{display:flex;gap:6px;flex:0 0 auto}
+  .size{width:44px;height:44px;border-radius:16px;border:none;background:transparent;
+    display:flex;align-items:center;justify-content:center;transition:background .15s, transform .12s}
+  .size:active{transform:scale(.86)}
+  .size.sel{background:#F1EDE6}
+  .size i{display:block;border-radius:50%;background:var(--ink)}
+  .eraser{width:46px;height:44px;border:none;background:transparent;border-radius:16px;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;color:var(--ink);transition:background .15s, transform .12s}
+  .eraser:active{transform:scale(.86)}
+  .eraser.sel{background:#FFE6DE;color:var(--accent)}
+  .eraser svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+
+  .toast{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 96px);left:50%;transform:translateX(-50%) translateY(8px);
+    background:var(--ink);color:#FFF;font-size:14px;font-weight:600;padding:10px 18px;border-radius:999px;
+    opacity:0;transition:opacity .25s, transform .25s;pointer-events:none;z-index:20}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media (prefers-reduced-motion: reduce){*{transition:none !important}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="bar">
+  <button id="undoB" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+  <button id="redoB" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+  <button id="homeB" aria-label="Fit drawing"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5"/></svg></button>
+  <button id="saveB" aria-label="Save picture"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/></svg></button>
+  <button id="clearB" class="warn" aria-label="Clear everything"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg></button>
+</div>
+<div id="zoomLbl">100%</div>
+
+<div class="tray">
+  <div class="colors" id="colors"></div>
+  <div class="divider"></div>
+  <div class="sizes" id="sizes"></div>
+  <div class="divider"></div>
+  <button class="eraser" id="eraserB" aria-label="Eraser"><svg viewBox="0 0 24 24"><path d="m8.5 19.5-4.7-4.7a2 2 0 0 1 0-2.8l8-8a2 2 0 0 1 2.8 0l5.4 5.4a2 2 0 0 1 0 2.8l-7.3 7.3"/><path d="M6 21h14"/></svg></button>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+"use strict";
+
+/* ============================== state ============================== */
+const PALETTE = ["#2B2926","#7A7268","#FFFFFF","#E2452F","#FF7A59","#F5A623",
+                 "#FFD93B","#5BBF4E","#1FA98C","#2D7FF9","#7B5BE6","#E85FA8","#8C5A3B"];
+const SIZES = [3.5, 7, 14, 26];           // world-space base widths
+const ERASER_MULT = 2.4;
+
+let strokes = [];                          // committed strokes (world coords)
+let ops = [], redos = [];                  // undo / redo op stacks
+let color = PALETTE[0], sizeIx = 1, erasing = false;
+
+// view transform: screen = world * scale + offset
+let scale = 1, ox = 0, oy = 0;
+const MIN_S = 0.1, MAX_S = 15;
+
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+const paint = document.createElement("canvas");   // committed + live ink layer
+const pctx = paint.getContext("2d");
+let dpr = 1, W = 0, H = 0;
+
+/* ============================== canvas setup ============================== */
+function resize(){
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
+  W = window.innerWidth; H = window.innerHeight;
+  for (const [el, c2] of [[cv, ctx], [paint, pctx]]){
+    el.width = Math.round(W * dpr); el.height = Math.round(H * dpr);
+    c2.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  cv.style.width = W + "px"; cv.style.height = H + "px";
+  renderAll();
+}
+window.addEventListener("resize", resize);
+
+/* ============================== stroke rendering ============================== */
+// Each stroke: {c: color, w: baseWidth, e: bool, pts: [x,y,w, x,y,w, ...]} (w = drawn width, world units)
+function segCtx(c2, s){
+  c2.globalCompositeOperation = s.e ? "destination-out" : "source-over";
+  c2.strokeStyle = s.e ? "#000" : s.c;
+  c2.fillStyle = c2.strokeStyle;
+  c2.lineCap = "round"; c2.lineJoin = "round";
+}
+function toScreen(x, y){ return [x * scale + ox, y * scale + oy]; }
+
+// Draw one smoothed segment: quadratic from midpoint(prev) -> midpoint(next), control = current point.
+function drawSeg(c2, x0,y0, cx,cy, x1,y1, w){
+  c2.lineWidth = Math.max(w, .35);
+  c2.beginPath();
+  c2.moveTo(x0, y0);
+  c2.quadraticCurveTo(cx, cy, x1, y1);
+  c2.stroke();
+}
+function drawDot(c2, x, y, w){
+  c2.beginPath(); c2.arc(x, y, Math.max(w,.35)/2, 0, 6.2832); c2.fill();
+}
+
+// Render a full stroke (used on redraws) onto pctx in screen space.
+function renderStroke(s){
+  segCtx(pctx, s);
+  const p = s.pts, n = p.length / 3;
+  if (n === 1){
+    const [sx, sy] = toScreen(p[0], p[1]);
+    drawDot(pctx, sx, sy, p[2] * scale);
+    return;
+  }
+  for (let i = 1; i < n; i++){
+    const ax = p[(i-1)*3], ay = p[(i-1)*3+1];
+    const bx = p[i*3],     by = p[i*3+1],  bw = p[i*3+2];
+    // midpoints
+    const prevMidX = i === 1 ? ax : (ax + p[(i-2)*3]) / 2;
+    const prevMidY = i === 1 ? ay : (ay + p[(i-2)*3+1]) / 2;
+    const midX = (ax + bx) / 2, midY = (ay + by) / 2;
+    const [sx0, sy0] = toScreen(prevMidX, prevMidY);
+    const [scx, scy] = toScreen(ax, ay);
+    const [sx1, sy1] = toScreen(midX, midY);
+    drawSeg(pctx, sx0, sy0, scx, scy, sx1, sy1, bw * scale);
+  }
+  // tail: midpoint -> last point
+  const lx = p[(n-1)*3], ly = p[(n-1)*3+1], lw = p[(n-1)*3+2];
+  const px2 = p[(n-2)*3], py2 = p[(n-2)*3+1];
+  const [tx0, ty0] = toScreen((lx+px2)/2, (ly+py2)/2);
+  const [tx1, ty1] = toScreen(lx, ly);
+  drawSeg(pctx, tx0, ty0, (tx0+tx1)/2, (ty0+ty1)/2, tx1, ty1, lw * scale);
+}
+
+let raf = 0;
+function renderAll(){
+  pctx.save(); pctx.setTransform(1,0,0,1,0,0);
+  pctx.clearRect(0, 0, paint.width, paint.height);
+  pctx.restore();
+  for (const s of strokes) renderStroke(s);
+  blit();
+}
+function scheduleRender(){ if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderAll(); }); }
+const PAPER = getComputedStyle(document.documentElement).getPropertyValue("--paper").trim() || "#FAF7F1";
+function blit(){
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.restore();
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(paint, 0, 0, W, H);
+}
+
+/* ============================== live ink ============================== */
+let live = null;   // {stroke, lastX,lastY, prevX,prevY, smoothW, drawnPts, moved}
+const sizeNow = () => SIZES[sizeIx] * (erasing ? ERASER_MULT : 1);
+
+function widthFor(e, vx, vy){
+  const base = sizeNow();
+  if (e.pointerType === "pen" && e.pressure > 0){
+    return base * (0.35 + e.pressure * 1.35);                 // real pressure
+  }
+  const v = Math.hypot(vx, vy);                                // velocity taper for fingers
+  const t = Math.min(v / 3.2, 1);
+  return base * (1.12 - t * 0.5);
+}
+function toWorld(x, y){ return [(x - ox) / scale, (y - oy) / scale]; }
+
+function strokeStart(e){
+  const [wx, wy] = toWorld(e.clientX, e.clientY);
+  const w = sizeNow();
+  live = {
+    stroke: { c: color, w, e: erasing, pts: [wx, wy, w * 0.6] },
+    px: e.clientX, py: e.clientY, t: e.timeStamp,
+    smoothW: w * 0.6, moved: 0
+  };
+}
+function strokeMove(e){
+  if (!live) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  segCtx(pctx, live.stroke);
+  for (const ev of evs){
+    const dx = ev.clientX - live.px, dy = ev.clientY - live.py;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1.2) continue;                                   // noise gate (screen px)
+    const dt = Math.max(ev.timeStamp - live.t, 1);
+    const target = widthFor(ev, dx / dt * 16, dy / dt * 16);
+    live.smoothW += (target - live.smoothW) * 0.28;             // low-pass width
+    const [wx, wy] = toWorld(ev.clientX, ev.clientY);
+    const p = live.stroke.pts;
+    p.push(wx, wy, live.smoothW / scale);                       // width stored in world units
+    // incremental draw of the newest segment, screen space
+    const n = p.length / 3;
+    if (n >= 2){
+      const ax = p[(n-2)*3], ay = p[(n-2)*3+1];
+      const bx = p[(n-1)*3], by = p[(n-1)*3+1], bw = p[(n-1)*3+2];
+      const pmx = n === 2 ? ax : (ax + p[(n-3)*3]) / 2;
+      const pmy = n === 2 ? ay : (ay + p[(n-3)*3+1]) / 2;
+      const [s0x, s0y] = toScreen(pmx, pmy);
+      const [scx2, scy2] = toScreen(ax, ay);
+      const [s1x, s1y] = toScreen((ax+bx)/2, (ay+by)/2);
+      drawSeg(pctx, s0x, s0y, scx2, scy2, s1x, s1y, bw * scale);
+    }
+    live.px = ev.clientX; live.py = ev.clientY; live.t = ev.timeStamp;
+    live.moved += dist;
+  }
+  blit();
+}
+function strokeEnd(commit = true){
+  if (!live) return;
+  const s = live.stroke; live = null;
+  if (!commit){ scheduleRender(); return; }
+  if (s.pts.length === 3){            // a tap = a dot
+    segCtx(pctx, s);
+    const [sx, sy] = toScreen(s.pts[0], s.pts[1]);
+    drawDot(pctx, sx, sy, sizeNow() * scale * 0.9);
+    s.pts[2] = sizeNow() * 0.9;
+    blit();
+  }
+  strokes.push(s);
+  ops.push({ t: "add" }); redos.length = 0;
+  refreshBar(); queueSave();
+}
+
+/* ============================== pointers & gestures ============================== */
+const touches = new Map();      // active touch pointers (for pan/zoom)
+let penDown = false;            // pen currently inking
+let penActiveUntil = 0;         // palm rejection window after pen lifts
+let gesture = null;             // {d0, s0, cx, cy, ox0, oy0} pinch state
+let drawPointer = null;         // pointerId currently inking
+
+cv.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  cv.setPointerCapture(e.pointerId);
+  const now = performance.now();
+
+  if (e.pointerType === "pen"){
+    penDown = true;
+    penActiveUntil = now + 700;
+    if (gesture) gesture = null;
+    if (drawPointer !== null && live) strokeEnd(false);   // pen beats a stray finger stroke
+    drawPointer = e.pointerId;
+    strokeStart(e);
+    return;
+  }
+  if (e.pointerType === "mouse"){
+    drawPointer = e.pointerId; strokeStart(e); return;
+  }
+  // touch
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY, t: now });
+  if (penDown || now < penActiveUntil) return;            // palm while pen in use
+
+  if (touches.size === 1){
+    drawPointer = e.pointerId;
+    strokeStart(e);
+  } else if (touches.size === 2){
+    // second finger: this is a pan/zoom — cancel a barely-started stroke
+    if (drawPointer !== null && live && live.moved < 18){
+      strokeEnd(false);                                   // barely started — treat as gesture
+    } else if (drawPointer !== null && live){
+      strokeEnd(true);                                    // keep a real stroke
+    }
+    drawPointer = null;
+    const [a, b] = [...touches.values()];
+    gesture = {
+      d0: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      s0: scale, ox0: ox, oy0: oy,
+      cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2
+    };
+  }
+}, { passive: false });
+
+cv.addEventListener("pointermove", e => {
+  e.preventDefault();
+  if (e.pointerId === drawPointer && live){ strokeMove(e); return; }
+  if (touches.has(e.pointerId)){
+    const t = touches.get(e.pointerId);
+    t.x = e.clientX; t.y = e.clientY;
+    if (gesture && touches.size >= 2){
+      const [a, b] = [...touches.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const ncx = (a.x + b.x) / 2, ncy = (a.y + b.y) / 2;
+      let ns = clamp(gesture.s0 * (d / gesture.d0), MIN_S, MAX_S);
+      // keep the world point under the gesture centre pinned
+      const wx = (gesture.cx - gesture.ox0) / gesture.s0;
+      const wy = (gesture.cy - gesture.oy0) / gesture.s0;
+      scale = ns;
+      ox = ncx - wx * ns;
+      oy = ncy - wy * ns;
+      showZoom(); scheduleRender();
+    }
+  }
+}, { passive: false });
+
+function lift(e){
+  if (e.pointerType === "pen"){ penDown = false; penActiveUntil = performance.now() + 700; }
+  if (e.pointerId === drawPointer){ strokeEnd(true); drawPointer = null; }
+  if (touches.delete(e.pointerId) && touches.size < 2) gesture = null;
+}
+cv.addEventListener("pointerup", lift);
+cv.addEventListener("pointercancel", e => {
+  if (e.pointerType === "pen"){ penDown = false; penActiveUntil = performance.now() + 700; }
+  if (e.pointerId === drawPointer){ strokeEnd(true); drawPointer = null; }
+  touches.delete(e.pointerId); if (touches.size < 2) gesture = null;
+});
+
+// desktop niceties: wheel zoom / trackpad
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  const f = Math.exp(-e.deltaY * 0.0015);
+  const ns = clamp(scale * f, MIN_S, MAX_S);
+  const wx = (e.clientX - ox) / scale, wy = (e.clientY - oy) / scale;
+  scale = ns; ox = e.clientX - wx * ns; oy = e.clientY - wy * ns;
+  showZoom(); scheduleRender();
+}, { passive: false });
+
+const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+
+/* ============================== UI ============================== */
+const $ = id => document.getElementById(id);
+const colorsEl = $("colors"), sizesEl = $("sizes"), eraserB = $("eraserB");
+
+PALETTE.forEach(c => {
+  const d = document.createElement("button");
+  d.className = "dot" + (c === color ? " sel" : "");
+  d.style.background = c; d.dataset.c = c;
+  d.setAttribute("aria-label", "Colour " + c);
+  d.addEventListener("click", () => {
+    color = c; erasing = false;
+    eraserB.classList.remove("sel");
+    colorsEl.querySelectorAll(".dot").forEach(x => x.classList.toggle("sel", x.dataset.c === c));
+  });
+  colorsEl.appendChild(d);
+});
+SIZES.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.className = "size" + (i === sizeIx ? " sel" : "");
+  const dot = document.createElement("i");
+  const px = 6 + i * 6; dot.style.width = px + "px"; dot.style.height = px + "px";
+  b.appendChild(dot);
+  b.setAttribute("aria-label", "Brush size " + (i + 1));
+  b.addEventListener("click", () => {
+    sizeIx = i;
+    sizesEl.querySelectorAll(".size").forEach((x, j) => x.classList.toggle("sel", j === i));
+  });
+  sizesEl.appendChild(b);
+});
+eraserB.addEventListener("click", () => {
+  erasing = !erasing;
+  eraserB.classList.toggle("sel", erasing);
+});
+
+/* top bar */
+const undoB = $("undoB"), redoB = $("redoB"), clearB = $("clearB");
+function refreshBar(){
+  undoB.disabled = ops.length === 0;
+  redoB.disabled = redos.length === 0;
+}
+undoB.addEventListener("click", () => {
+  const op = ops.pop(); if (!op) return;
+  if (op.t === "add"){ redos.push({ t: "add", s: strokes.pop() }); }
+  else if (op.t === "clear"){ strokes = op.s; redos.push({ t: "clear" }); }
+  refreshBar(); scheduleRender(); queueSave();
+});
+redoB.addEventListener("click", () => {
+  const op = redos.pop(); if (!op) return;
+  if (op.t === "add"){ strokes.push(op.s); ops.push({ t: "add" }); }
+  else if (op.t === "clear"){ ops.push({ t: "clear", s: strokes }); strokes = []; }
+  refreshBar(); scheduleRender(); queueSave();
+});
+
+let clearArmed = 0;
+clearB.addEventListener("click", () => {
+  const now = performance.now();
+  if (now - clearArmed > 2600){
+    clearArmed = now; toast("Tap again to clear everything");
+    return;
+  }
+  clearArmed = 0;
+  if (strokes.length){ ops.push({ t: "clear", s: strokes }); strokes = []; redos.length = 0; }
+  refreshBar(); scheduleRender(); queueSave();
+  toast("All clear ✨");
+});
+
+$("homeB").addEventListener("click", () => {
+  if (!strokes.length){ scale = 1; ox = 0; oy = 0; scheduleRender(); showZoom(); return; }
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const s of strokes){
+    const p = s.pts;
+    for (let i = 0; i < p.length; i += 3){
+      if (p[i] < x0) x0 = p[i]; if (p[i] > x1) x1 = p[i];
+      if (p[i+1] < y0) y0 = p[i+1]; if (p[i+1] > y1) y1 = p[i+1];
+    }
+  }
+  const pad = 60;
+  const s2 = clamp(Math.min(W / (x1 - x0 + pad * 2), H / (y1 - y0 + pad * 2)), MIN_S, MAX_S);
+  scale = s2;
+  ox = W / 2 - (x0 + x1) / 2 * s2;
+  oy = H / 2 - (y0 + y1) / 2 * s2;
+  scheduleRender(); showZoom();
+});
+
+$("saveB").addEventListener("click", () => {
+  const out = document.createElement("canvas");
+  out.width = cv.width; out.height = cv.height;
+  const o = out.getContext("2d");
+  o.fillStyle = "#FFFFFF"; o.fillRect(0, 0, out.width, out.height);
+  o.drawImage(paint, 0, 0);
+  out.toBlob(blob => {
+    if (!blob) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "drawing-" + new Date().toISOString().slice(0, 10) + ".png";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast("Picture saved 🎨");
+  }, "image/png");
+});
+
+/* zoom label + toast */
+const zoomLbl = $("zoomLbl"); let zoomT = 0;
+function showZoom(){
+  zoomLbl.textContent = Math.round(scale * 100) + "%";
+  zoomLbl.style.opacity = 1;
+  clearTimeout(zoomT); zoomT = setTimeout(() => zoomLbl.style.opacity = 0, 900);
+}
+const toastEl = $("toast"); let toastT = 0;
+function toast(msg){
+  toastEl.textContent = msg; toastEl.classList.add("show");
+  clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove("show"), 2200);
+}
+
+/* ============================== autosave (device-local, no accounts) ============================== */
+// Uses the iPad's own browser storage. Note: inside a claude.ai preview this is
+// sandboxed and autosave is silently off — it works fully once self-hosted.
+const KEY = "doodle-infinity:v1";
+const store = (() => {
+  try {
+    const t = "__doodle_test__";
+    window.localStorage.setItem(t, "1");
+    window.localStorage.removeItem(t);
+    return {
+      get: k => window.localStorage.getItem(k),
+      set: (k, v) => window.localStorage.setItem(k, v)
+    };
+  } catch (_) { return null; }   // sandboxed environment — in-memory only
+})();
+let saveT = 0;
+function queueSave(){ clearTimeout(saveT); saveT = setTimeout(persist, 900); }
+function persist(){
+  if (!store) return;
+  try {
+    const slim = strokes.map(s => ({
+      c: s.c, e: s.e ? 1 : 0,
+      p: s.pts.map(v => Math.round(v * 10) / 10)
+    }));
+    let json = JSON.stringify({ s: slim, v: [scale, ox, oy] });
+    while (json.length > 4_500_000 && slim.length > 1){
+      slim.shift();
+      json = JSON.stringify({ s: slim, v: [scale, ox, oy] });
+    }
+    store.set(KEY, json);
+  } catch (_) { /* storage full or unavailable — in-memory only */ }
+}
+function restore(){
+  if (!store) return;
+  try {
+    const raw = store.get(KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    strokes = (d.s || []).map(o => ({ c: o.c, e: !!o.e, w: 0, pts: o.p }));
+    if (d.v){ scale = clamp(d.v[0], MIN_S, MAX_S); ox = d.v[1]; oy = d.v[2]; }
+    refreshBar(); scheduleRender();
+    if (strokes.length) toast("Welcome back — your drawing is safe");
+  } catch (_) { /* no saved drawing yet */ }
+}
+
+/* offline support when self-hosted */
+if ("serviceWorker" in navigator){
+  try { navigator.serviceWorker.register("sw.js"); } catch (_) {}
+}
+
+/* ============================== go ============================== */
+document.addEventListener("gesturestart", e => e.preventDefault());  // stop Safari page-pinch
+document.addEventListener("dblclick", e => e.preventDefault());
+resize();
+refreshBar();
+restore();
+})();
+</script>
+</body>
+</html>
