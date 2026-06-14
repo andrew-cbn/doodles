@@ -1,7 +1,7 @@
 // Doodle Infinity service worker — update-friendly.
 // HTML/JS: network-first (newest version when online, cached copy when offline).
 // Icons/manifest: cache-first (they rarely change).
-const CACHE = "doodle-v4";
+const CACHE = "doodle-v5";
 const CORE = ["./", "./index.html", "./manifest.json", "./icon-180.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
